@@ -9,7 +9,8 @@
 * Modified for EECE 433 Lab 3
 * 05/05/2021 Dylan Huntsman
 *
-*Finds frequency data for
+* Finds frequency data for input tone, as well as modulated values. Pauses 1 second on startup
+* to allow for settling.
 *******************************************************************************************/
 /******************************************************************************************
 * Include files
@@ -66,6 +67,8 @@ static arm_rfft_instance_q31 arm_rfft_sR_q31_len128Mod;
 static arm_rfft_fast_instance_f32 arm_rfft_sR_f32_len128Mod;
 typedef enum {STARTUP, COMPLETE} MATH_STATES;
 static MATH_STATES MathState;
+
+//structs hold magnitude and bin data of frequency components
 typedef struct {
     q31_t maxvalue[1];
     uint32_t index[1];
@@ -130,7 +133,7 @@ static void dspTask(void *p_arg){
     INT16U i;
     float32_t w = 9375*2*PI;
     (void)p_arg;
-    OSTimeDly(3000,OS_OPT_TIME_PERIODIC,&os_err);
+    OSTimeDly(1000,OS_OPT_TIME_PERIODIC,&os_err);
     while(1){
 
         DB0_TURN_OFF();                             /* Turn off debug bit while waiting */
@@ -143,7 +146,8 @@ static void dspTask(void *p_arg){
 
         //Only generates cosine signal once for speed
         //Copies dspInBuffer values into 3 separate arrays for each part of the lab. arm_rfft_x functions modify source buffers
-        if(MathState == STARTUP){
+        switch(MathState){
+        case STARTUP:
             for (i = 0; i < DSP_SAMPLES_PER_BLOCK; i++){
                 cosfloat[i] = arm_cos_f32(w*i/SAMPLE_RATE_HZ)/5;
                 floatbuf[i] = (((float32_t) dspInBuffer[DSP_LEFT_CH][buffer_index].samples[i])/(1<<12))*cosfloat[i];
@@ -152,12 +156,16 @@ static void dspTask(void *p_arg){
             }
             arm_float_to_q31(&cosfloat[0], &cosq[0], DSP_SAMPLES_PER_BLOCK);
             MathState = COMPLETE;
-        } else {
+            break;
+        case COMPLETE:
             for (i = 0; i < DSP_SAMPLES_PER_BLOCK; i++){
                 floatbuf[i] = (((float32_t) dspInBuffer[DSP_LEFT_CH][buffer_index].samples[i]/(1<<12)))*cosfloat[i];
                 qbuff[i] = dspInBuffer[DSP_LEFT_CH][buffer_index].samples[i];
                 inBuffCopy[i] = dspInBuffer[DSP_LEFT_CH][buffer_index].samples[i];
             }
+            break;
+        default:
+            MathState = STARTUP;
         }
 
         //Parts 2 and 3 called here. If your computer can't run them all at once, comment them out to improve performance.
@@ -200,7 +208,6 @@ void dspPart3(void){
     arm_cmplx_mag_f32(&fftResultFloat[0], &fftResultMagFloat[0], DSP_SAMPLES_PER_BLOCK);
     arm_max_f32(&fftResultMagFloat[0], DSP_SAMPLES_PER_BLOCK, &FLOAT_BINS.maxvalue[0], &FLOAT_BINS.index[0]);
     FLOAT_BINS.index[0] = FREQ_NORM(FLOAT_BINS.index[0]);
-    FLOAT_BINS.maxvalue[0] = (FLOAT_BINS.maxvalue[0]/DSP_SAMPLES_PER_BLOCK)/(1<<31);
 
 }
 
